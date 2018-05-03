@@ -34,7 +34,6 @@ zlabel('[km]')
 
 [t2,y2] = ode45(@(t,y) J2_prop(y,mu,J2,Re), tspan, initCond, opts);
 
-
 figure
 hold on
 plot3(y2(:,1),y2(:,2),y2(:,3),'c','LineWidth',1)
