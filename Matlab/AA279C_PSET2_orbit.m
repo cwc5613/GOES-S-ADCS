@@ -5,6 +5,10 @@ close all;
 [a, e, inc, RAAN, w, M0, E, anom, revs_per_day] =...
     TLE_Reader('SKYSAT1_TLE.txt');
 
+load 'AA279C_ps2_data.mat';
+
+b_R_P = [Ix;Iy;Iz];
+
 mu = 398600;
 J2 = 1.081874*10^-3;
 Re = 6378137*10^-3;
@@ -44,10 +48,54 @@ xlabel('[km]')
 ylabel('[km]')
 zlabel('[km]')
 
+%% Quaternions
+
+stopTime = 10;
+stepSize = 0.001;
+tspan = [0:stepSize:stopTime];
+
+% Initial Attitude Conditions
+Q0 = [0 -1 0;1 0 0;0 0 1];
+q0 = Q2quat(Q0);
+om0 = [0;1;10.7];
+x0 = [r_eci;v_eci;om0;q0];
+
+% ODE45 Solver for Orbital Dynamics
+[t, y3] = ode45(@(t,y3)HSTdynamics(mu,J,rho,y3), tspan, x0, opts);
+
+% Plot Orbit
+figure, hold on
+plot3(y3(:,1),y3(:,2),y3(:,3),'c*','LineWidth',2)
+xlabel('[km]')
+ylabel('[km]')
+zlabel('[km]')
+title('Perturbed Rotor-Stabilized Orbit')
+earthPlot(1)
+axis equal
+hold off
+
+% Plot Quaternion
+q = y3(:,10:13);
+figure
+subplot(4,1,1),plot(t,q(:,1),'LineWidth',2),ylabel('q_1'),xlabel('Time (sec)'),title('Perturbed Rotor-Stabilized Quaternion Components vs Time')
+subplot(4,1,2),plot(t,q(:,2),'LineWidth',2),ylabel('q_2'),xlabel('Time (sec)')
+subplot(4,1,3),plot(t,q(:,3),'LineWidth',2),ylabel('q_3'),xlabel('Time (sec)')
+subplot(4,1,4),plot(t,q(:,4),'LineWidth',2),ylabel('q_4'),xlabel('Time (sec)')
+
+%% Pointing Angle
+
+for i = 1:size(y3,1)
+    y3_norm(i,:) = y3(i,1:3)./norm(y3(i,1:3));
+    th_e(i) = dav_q_method([-1,0,0]',b_R_P*y3_norm(i,:)',Q0);
+end
+
+figure
+plot(th_e)
+
+%% Helper Functions
+
 function drdt = orb_prop(r,mu)
-
 drdt = [r(4:6); -mu*r(1:3)/norm(r(1:3))^3];
-
 end
 
 function drdt = J2_prop(r,mu,J2,Re)
@@ -186,24 +234,18 @@ r_eci = rotPeri2ECI*rPeri;
 v_eci = rotPeri2ECI*vPeri;
 end
 
-function dav_q_method(rB,rN,Q_true)
+function th_e = dav_q_method(rB,rN,Q_true)
 B = zeros(3);
-Z = zeros(3,1);
+
 for i=1:size(rB,2)
     B = B + rB(:,i)*rN(:,i)';
-    Z = Z + cross(rB(:,i),rN(:,i));
 end
 
-K = [B + B' - trace(B)*eye(3) Z;Z' trace(B)];
-[eigvec, eigval] = eig(K);
-[eigmax, idx] = max(diag(eigval));
+[U,S,V] = svd(B');
+Q_NB_SVD = U*[1,0,0;0,1,0;0,0,det(U)*det(V)]*V';
+Q_NB_SVD*Q_NB_SVD';
 
-q_NB = eigvec(:,idx)/norm(eigvec(:,idx))
-v = q_NB(1:3);
-s = q_NB(4);
-
-Q_NB_DAVEN = eye(3) + 2*hat(v)*(hat(v) + s*eye(3));
-Q_error = Q_true'*Q_NB_DAVEN;
+Q_error = Q_true'*Q_NB_SVD;
 e = unhat(logm(Q_error));
 th_e = 180/pi*norm(e);
 end
@@ -218,3 +260,28 @@ function M = hat(v)
 M = [0,-v(3),v(2);v(3),0,-v(1);-v(2),v(1),0];
 end
 
+function q = Q2quat(Q)
+phi = unhat(logm(Q));
+theta = norm(phi);
+r = (phi/theta)';
+q = [r*sin(theta/2); cos(theta/2)];
+end
+
+function x_dot = HSTdynamics(mu,J,rho,init_state)
+
+% Define State x = [r; r_dot; om; quat], x_dot = [r_dot; r_ddot; om_dot; quat_dot]
+rvec = init_state(1:3);
+vvec = init_state(4:6);
+om0 = init_state(7:9);
+q0 = init_state(10:13);
+
+v = q0(1:3);
+s = q0(4);
+qhat = [s*eye(3)+hat(v) v;-v' s];
+
+% Matrix Linear Equation
+x_dot = [vvec; -mu*rvec/norm(rvec)^3];
+x_dot(7:9,1) = -J\cross(om0,J*om0 + rho);
+x_dot(10:13,1) = (1/2)*qhat*[om0; 0];
+
+end

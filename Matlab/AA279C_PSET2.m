@@ -81,12 +81,12 @@ surf(X*0.99*h, Y*0.99*h, Z*0.99*h,CO,'FaceAlpha',0.95);
 lighting phong
 shading interp
 for i = 1:count-1
-    plot3(ht1(1,:,i),ht1(2,:,i),ht1(3,:,i),'r','LineWidth',2)
-    plot3(ht2(1,:,i),ht2(2,:,i),ht2(3,:,i),'b','LineWidth',2)
-    plot3(ht3(1,:,i),ht3(2,:,i),ht3(3,:,i),'k','LineWidth',2)
-    plot3(-ht1(1,:,i),-ht1(2,:,i),-ht1(3,:,i),'r','LineWidth',2)
-    plot3(-ht2(1,:,i),-ht2(2,:,i),-ht2(3,:,i),'b','LineWidth',2)
-    plot3(-ht3(1,:,i),-ht3(2,:,i),-ht3(3,:,i),'k','LineWidth',2)
+    plot3(ht1(1,:,i),ht1(2,:,i),ht1(3,:,i),'r','LineWidth',1)
+    plot3(ht2(1,:,i),ht2(2,:,i),ht2(3,:,i),'b','LineWidth',1)
+    plot3(ht3(1,:,i),ht3(2,:,i),ht3(3,:,i),'k','LineWidth',1)
+    plot3(-ht1(1,:,i),-ht1(2,:,i),-ht1(3,:,i),'r','LineWidth',1)
+    plot3(-ht2(1,:,i),-ht2(2,:,i),-ht2(3,:,i),'b','LineWidth',1)
+    plot3(-ht3(1,:,i),-ht3(2,:,i),-ht3(3,:,i),'k','LineWidth',1)
 end
 plot3(heq1(1,:),heq1(2,:),heq1(3,:),'k*','LineWidth',2)
 plot3(heq2(1,:),heq2(2,:),heq2(3,:),'k*','LineWidth',2)
@@ -138,7 +138,7 @@ lighting phong
 shading interp
 plot3(hspin3(1,:),hspin3(2,:),hspin3(3,:),'b*','LineWidth',2)
 for i = 1:count-1
-    plot3(hspindist3(1,:),hspindist3(2,:),hspindist3(3,:),'k','LineWidth',2)
+    plot3(hspindist3(1,:),hspindist3(2,:),hspindist3(3,:),'k','LineWidth',1)
 end
 title(['Angular Momentum Sphere (h = ' num2str(norm(h_rho)) ')'])
 axis equal
@@ -168,3 +168,30 @@ function M = hat(v)
 M = [0,-v(3),v(2);v(3),0,-v(1);-v(2),v(1),0];
 end
 
+function x_dot = HSTdynamics(mu,J,rho,init_state)
+
+% Define State x = [r; r_dot; om; quat], x_dot = [r_dot; r_ddot; om_dot; quat_dot]
+rvec = init_state(1:3);
+vvec = init_state(4:6);
+om0 = init_state(7:9);
+q0 = init_state(10:13);
+
+v = q0(1:3);
+s = q0(4);
+qhat = [s*eye(3)+hat(v) v;-v' s];
+r = norm(rvec);
+
+% Matrix Linear Equation
+x_dot = [zeros(3,3) eye(3,3);
+    -(mu/(r^3))*eye(3,3) zeros(3,3)]*[rvec; vvec];
+
+x_dot(7:9,1) = -J\cross(om0,J*om0 + rho);
+x_dot(10:13,1) = (1/2)*qhat*[om0; 0];
+end
+
+function q = Q2quat(Q)
+phi = unhat(logm(Q));
+theta = norm(phi);
+r = (phi/theta)';
+q = [r*sin(theta/2); cos(theta/2)];
+end
