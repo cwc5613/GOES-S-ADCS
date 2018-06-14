@@ -1,37 +1,37 @@
-function [xhist, Phist] = mekf(x0, P0, W, V, rN, whist, yhist, dt)
+function [mu, sigma] = mekf(x0, P0, Q, R, rN, whist, yhist, dt)
 
-xhist = zeros(7,size(yhist,2));
-xhist(:,1) = x0;
+mu = zeros(7,size(yhist,2));
+mu(:,1) = x0;
 
-Phist = zeros(6,6,size(yhist,2));
-Phist(:,:,1) = P0;
-
+sigma = zeros(6,6,size(yhist,2));
+sigma(:,:,1) = P0;
 
 for k = 1:(size(yhist,2)-1) 
-    [x_p, A] = prediction(xhist(:,k),whist(:,k),dt);
-    P_p = A*Phist(:,:,k)*A' + W;   
-    [yp, C] = measurement(x_p(1:4),rN);   
+    [mu_pred, A] = prediction(mu(:,k),whist(:,k),dt);
+    sig_pred = A*sigma(:,:,k)*A' + Q;   
+    [yp, C] = measurement(mu_pred(1:4),rN);   
     
     % Innovation
-    z = yhist(:,k) - yp;
-    S = C*P_p*C' + V;
+    inno_quat = quat2phi(qmult(qconj(mu_pred(1:4)))*yhist(1:4,k+1)); 
+    inno_body = yhist(5:end,k+1) - yp(5:end); 
+    inno = [inno_quat; inno_body];
+    S = C*sig_pred*C' + R; 
 
     % Kalman Gain
-    L = P_p*C'*S^-1;
+    K = sig_pred*C'/S; 
     
     % Update
-    dx = L*z; % [dphi; dbeta], 6x1
+    dx = K*inno;
     phi = dx(1:3);
-    dq = [1/2*phi ; 1 - 1/8*phi'*phi];
+    dq = phi2quat(phi);
     dq = dq/norm(dq);
     
     % Quaternion and Bias Update
-    xhist(1:4,k+1) = qmult(x_p(1:4))*dq;
-    xhist(5:7,k+1) = x_p(5:7) + dx(4:6);
+    mu(1:4,k+1) = qmult(mu_pred(1:4))*dq;
+    mu(5:7,k+1) = mu_pred(5:7) + dx(4:6);
     
     % Covariance Update
-    Phist(:,:,k+1) = (eye(6) - L*C)*P_p*(eye(6) - L*C)' + L*V*L';
-
+    sigma(:,:,k+1) = (eye(6) - K*C)*sig_pred*(eye(6) - K*C)' + K*R*K';
 end
 end
 
